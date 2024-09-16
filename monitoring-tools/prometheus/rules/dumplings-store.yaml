@@ -1,0 +1,11 @@
+---
+groups:
+  - name: Dumplings store rules
+    rules:
+    - alert: InstanceDown
+      expr: up{app="backend"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        project: "dumplings-store"
+        component: "Backend"

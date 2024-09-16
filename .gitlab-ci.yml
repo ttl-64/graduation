@@ -1,0 +1,84 @@
+default:
+  cache:
+    key: "$CI_COMMIT_REF_SLUG"
+    paths:
+      - $HOME/.cache/go-build
+      - .npm/ # для хранения зависимостей сборки фронтенда 
+
+stages:
+  - module-pipelines
+  - test
+  - deploy
+
+# variables:
+
+frontend:
+  stage: module-pipelines
+  trigger:
+    include:
+      - "/frontend/.gitlab-ci.yml"
+      - template: Security/SAST.gitlab-ci.yml
+    strategy: depend 
+  only:
+    changes: # как только происходит изменение в папке frontend, запускается дочерний пайплайн, который лежит в этой папке
+      - frontend/**/*
+
+backend:
+  stage: module-pipelines
+  trigger:
+    include:
+      - "/backend/.gitlab-ci.yml"
+      - template: Security/SAST.gitlab-ci.yml
+    strategy: depend
+  only:
+    changes:  # как только происходит изменение в папке backend, запускается дочерний пайплайн, который лежит в этой папке
+      - backend/**/*
+
+deploy-with-helm:
+  stage: deploy
+  image: 
+    name: alpine/k8s:1.28.13
+    entrypoint: [""]
+  only:
+    changes:
+      - backend/**/*
+      - frontend/**/*
+      - dumplings-chart/**/*
+    # refs:
+    #   - main
+  dependencies:
+    - frontend
+    - backend
+  when: manual
+  before_script:
+    - apk add --no-cache --upgrade grep
+    - apk add --no-cache curl unzip
+    - echo -e "${KUBECERT}" | sed 's/\\s/ /g' > ca.pem
+    - echo -e "${KUBECONFIG}" | sed 's/\\s/ /g' > kubeconfig.conf
+  script:
+    - 'curl --location --output frontver.zip "https://gitlab.praktikum-services.ru/api/v4/projects/$CI_PROJECT_ID/jobs/artifacts/main/download?job=upload-frontend-release&job_token=$CI_JOB_TOKEN" && true'
+    - 'curl --location --output backver.zip "https://gitlab.praktikum-services.ru/api/v4/projects/$CI_PROJECT_ID/jobs/artifacts/main/download?job=upload-backend-release&job_token=$CI_JOB_TOKEN" && true'
+    - ls -l
+    - unzip frontver.zip && true
+    - unzip backver.zip && true
+    - export front_ver=$(grep -oP '(\d+\.\d+\.\d+)' ./frontver.txt || echo "latest")
+    - echo ${front_ver}
+    - export back_ver=$(grep -oP '(\d+\.\d+\.\d+)' ./backver.txt || echo "latest")
+    - echo ${back_ver}
+    - |
+      helm upgrade --install dumplings-store \
+      --set global.dockerconfigjson=${DOCK_CONF} \
+      --set global.frontend.AppVer=${front_ver} \
+      --set global.backend.AppVer=${back_ver} \
+      --set global.frontend.fqdn=${FQDN} \
+      --atomic \
+      --kubeconfig="./kubeconfig.conf" \
+      --kube-ca-file="./ca.pem" \
+      --namespace default \
+      ./dumplings-chart/
+
+
+  environment:
+    name: Dumplings-Store
+    url: https://${FQDN}
+    action: start

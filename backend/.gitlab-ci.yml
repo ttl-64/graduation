@@ -1,0 +1,89 @@
+stages:
+  - build-docker
+  - build-code
+  - test
+  - release
+
+variables:
+  BACKEND_VERSION: 1.0.${CI_PIPELINE_ID}
+
+build-backend-docker-job:
+  stage: build-docker
+  only:
+    changes:
+      - backend/**/*
+  image:
+    name: gcr.io/kaniko-project/executor:v1.9.0-debug
+    entrypoint: [""]
+  script:
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}/backend"
+      --dockerfile "${CI_PROJECT_DIR}/backend/Dockerfile"
+      --destination "${CI_REGISTRY_IMAGE}/backend:$CI_COMMIT_SHA"
+      --build-arg VERSION=${BACKEND_VERSION}
+      --cache=true  
+
+build-backend-code-job:
+  stage: build-code
+  only:
+    changes:
+      - backend/**/*
+  image:
+    name: golang:1.23
+    entrypoint: [""]
+  cache:
+    paths:
+      - $HOME/.cache/go-build
+  script:
+    - cd backend
+    - go mod download && go mod verify
+    - go build -v -o ./api_v${BACKEND_VERSION} ./cmd/api/
+    - ls -la
+    - curl -v -u "${NEXUS_REPO_USER}:${NEXUS_REPO_PASS}" --upload-file "api_v${BACKEND_VERSION}" ${NEXUS_REPO_URL}/${NEXUS_REPO_BACKEND_NAME}/${BACKEND_VERSION}/api_v${BACKEND_VERSION}
+  artifacts:
+    paths:
+      - ${CI_PROJECT_DIR}/backend/api-v${BACKEND_VERSION}
+
+sonarqube-backend-sast:
+  stage: test
+  dependencies:
+    - build-backend-code-job
+    - build-backend-docker-job
+  image: sonarsource/sonar-scanner-cli
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/backend/.sonar"
+  cache:
+    paths:
+      - .sonar/cache
+  script:
+    - cd backend
+    - > 
+      sonar-scanner -Dsonar.qualitygate.wait=true 
+      -Dsonar.host.url=${SONARQUBE_URL}
+      -Dsonar.login=${SONAR_LOGIN_BACK}
+      -Dsonar.projectName=${SONAR_PROJECT_KEY_BACK}
+      -Dsonar.projectKey=${SONAR_PROJECT_KEY_BACK}
+      -Dsonar.projectBaseDir=${CI_PROJECT_DIR}/backend
+      -Dsonar.sources=./internal,./cmd
+
+upload-backend-release:
+  needs: 
+    - build-backend-docker-job
+    - sonarqube-backend-sast
+  variables:
+    GIT_STRATEGY: none
+  image:
+    name: gcr.io/go-containerregistry/crane:debug
+    entrypoint: [""]
+  cache: [ ]
+  stage: release
+  before_script:
+    - crane auth login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - crane tag $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHA ${BACKEND_VERSION}
+    - crane tag $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHA latest
+    - echo "${BACKEND_VERSION}" > backver.txt
+  artifacts:
+    name: "backver"
+    expire_in: "5 days"
+    paths: ['backver.txt']

@@ -1,0 +1,79 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+   name: {{ .Chart.Name }}
+   labels:
+     app: {{ .Chart.Name }}
+   namespace: {{ .Values.global.namespace }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.service.port }}
+      protocol: TCP
+      targetPort: {{ .Values.service.port }}
+  selector:
+    app: {{ .Chart.Name }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Chart.Name }}
+  annotations:
+    cert-manager.io/cluster-issuer: "http01-clusterissuer"
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Chart.Name }}
+    app.kubernetes.io/name: dumplings-frontend
+    app.kubernetes.io/instance: "{{ .Release.Name }}"
+    app.kubernetes.io/version: "{{ .Chart.AppVersion }}"
+    app.kubernetes.io/managed-by: "{{ .Release.Service }}"
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    app.kubernetes.io/component: {{ .Chart.Name }}
+    app.kubernetes.io/part-of: {{ .Release.Name }}
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+      - {{ .Values.global.frontend.fqdn }}
+      secretName: domain-name-secret
+    - hosts:
+      - grafana-monitoring.{{ .Values.global.frontend.fqdn }}
+      secretName: grafana-name-secret
+    # - hosts:
+    #   - loki-monitoring.{{ .Values.global.frontend.fqdn }}
+    #   secretName: loki-name-secret
+    - hosts:
+      - prometheus-monitoring.{{ .Values.global.frontend.fqdn }}
+      secretName: prometheus-name-secret
+  rules:
+    - host: {{ .Values.global.frontend.fqdn }}
+      http:
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: {{ .Chart.Name }}
+              port:
+                number: 80
+    - host: grafana-monitoring.{{ .Values.global.frontend.fqdn }}
+      http:
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: grafana
+              port:
+                number: 80
+    - host: prometheus-monitoring.{{ .Values.global.frontend.fqdn }}
+      http:
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: prometheus
+              port:
+                number: 80

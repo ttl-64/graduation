@@ -1,0 +1,42 @@
+# values.yaml
+global:
+  environment: production
+  frontend:
+    AppVer: latest
+    fqdn: pelmeniyaroslava.ru
+  dockerconfigjson: ""
+  backend:
+    AppVer: latest
+  namespace: default
+
+backend: # Это имя чарта из dependencies
+  # Вместо latest правильнее использовать версию .Chart.AppVersion в шаблоне
+  image:
+    repository: gitlab.praktikum-services.ru:5050/std-ext-006-22/dumplings/backend
+    # tag: {{ .Values.global.backend.AppVer }} - задаю через глобал напрямую в deployment
+  imagePullPolicy: Always
+  replicas: 2
+  revisionHistoryLimit: 12
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 20%
+  service:
+    port: 8081
+  containerPort: 8081
+
+frontend:
+  image: 
+    repository: gitlab.praktikum-services.ru:5050/std-ext-006-22/dumplings/frontend
+    # tag: {{ .Values.global.frontend.AppVer }} - задаю через глобал напрямую в deployment
+  imagePullPolicy: Always
+  replicas: 2
+  revisionHistoryLimit: 12
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 20%  
+  service:
+    port: 80

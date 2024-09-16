@@ -1,0 +1,52 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minimal-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: "http01-clusterissuer"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+      - pelmeniyaroslava.ru
+      secretName: domain-name-secret
+    - hosts:
+      - grafana-monitoring.pelmeniyaroslava.ru
+      secretName: grafana-name-secret
+    - hosts:
+      - loki-monitoring.pelmeniyaroslava.ru
+      secretName: loki-name-secret
+    - hosts:
+      - prometheus-monitoring.pelmeniyaroslava.ru
+      secretName: prometheus-name-secret
+  rules:
+    - host: pelmeniyaroslava.ru
+      http:
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: frontend
+              port:
+                number: 80
+    - host: grafana-monitoring.pelmeniyaroslava.ru
+      http:
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: grafana
+              port:
+                number: 80
+    # - host: loki-monitoring.pelmeniyaroslava.ru
+    #   http:
+    #     path:
+    #     - path: /
+    #       pathType: Prefix
+    #       backend:
+    #         service:
+    #           name: grafana
+    #           port:
+    #             number: 80
